@@ -48,9 +48,14 @@ def load_plugin(args):
     raise SystemExit("FAIL: xyvsf plugin is neither autoloaded nor found below " + plugin_dir)
 
 
+FAILURES = []
+
+
 def check(cond, msg):
     if not cond:
-        raise SystemExit("FAIL: " + msg)
+        FAILURES.append(msg)
+        print("FAIL: " + msg)
+        return
     print("ok  ", msg)
 
 
@@ -61,7 +66,7 @@ def expect_error(fn, msg, contains=""):
         text = str(e).strip().splitlines()[-1]
         check(contains in text, "%s (%s)" % (msg, text))
     else:
-        raise SystemExit("FAIL: no error raised: " + msg)
+        check(False, "no error raised: " + msg)
 
 
 def digest(clip, n):
@@ -99,6 +104,8 @@ def main():
         expect_error(lambda: core.xyvsf.TextSub(src.resize.Point(format=vs.YUV444P8), file=path), "YUV444P8 rejected", "only constant format")
         expect_error(lambda: core.xyvsf.TextSub(src, file=os.path.join(tmp, "missing.ass")), "missing subtitle file rejected", "can't open")
 
+    if FAILURES:
+        raise SystemExit("%d check(s) failed" % len(FAILURES))
     print("all tests passed")
 
 
