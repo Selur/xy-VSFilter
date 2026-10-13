@@ -209,8 +209,8 @@ public:
                 m_simple_provider = NULL;
                 return(false);
             }
-            hr = XySetSize(SIZE_ORIGINAL_VIDEO, size);
-            CHECK_N_LOG(hr, "Failed to set option");
+            // SIZE_ORIGINAL_VIDEO is read only through XySetSize; without it the GDI renderer scales by 1/0
+            m_xy_size_opt[SIZE_ORIGINAL_VIDEO] = size;
         }
 
         if(m_SubPicProviderId != (DWORD_PTR)(ISubPicProvider*)m_pSubPicProvider)
