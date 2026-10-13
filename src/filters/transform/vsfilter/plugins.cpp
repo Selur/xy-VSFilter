@@ -1248,8 +1248,17 @@ public:
     //
 
     namespace VapourSynth {
-#include <vapoursynth/VapourSynth.h>
-#include <vapoursynth/VSHelper.h>
+#include <vapoursynth/VapourSynth4.h>
+#include <vapoursynth/VSHelper4.h>
+
+        // The formats the filter renders onto: YUV 4:2:0 with 8 or 16 bit, RGB24.
+        static bool isYUV420(const VSVideoFormat &f, int bits) {
+            return f.colorFamily == cfYUV && f.sampleType == stInteger && f.bitsPerSample == bits && f.subSamplingW == 1 && f.subSamplingH == 1;
+        }
+
+        static bool isRGB24(const VSVideoFormat &f) {
+            return f.colorFamily == cfRGB && f.sampleType == stInteger && f.bitsPerSample == 8;
+        }
 
         class CTextSubVapourSynthFilter : public CTextSubFilter {
         public:
@@ -1267,7 +1276,7 @@ public:
         };
 
         struct VSFilterData {
-            VSNodeRef *node;
+            VSNode *node;
             const VSVideoInfo *vi;
             float fps;
             VFRTranslator *vfr;
@@ -1277,27 +1286,22 @@ public:
             std::unique_ptr<uint8_t[]> buffer8;
         };
 
-        static void VS_CC vsfilterInit(VSMap *in, VSMap *out, void **instanceData, VSNode *node, VSCore *core, const VSAPI *vsapi) {
-            const VSFilterData *d = static_cast<const VSFilterData *>(*instanceData);
-            vsapi->setVideoInfo(d->vi, 1, node);
-        }
-
-        static const VSFrameRef *VS_CC vsfilterGetFrame(int n, int activationReason, void **instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi) {
-            const VSFilterData *d = static_cast<const VSFilterData *>(*instanceData);
+        static const VSFrame *VS_CC vsfilterGetFrame(int n, int activationReason, void *instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi) {
+            const VSFilterData *d = static_cast<const VSFilterData *>(instanceData);
 
             if (activationReason == arInitial) {
                 vsapi->requestFrameFilter(n, d->node, frameCtx);
             }
             else if (activationReason == arAllFramesReady) {
-                const VSFrameRef *src = vsapi->getFrameFilter(n, d->node, frameCtx);
-                VSFrameRef *dst = vsapi->copyFrame(src, core);
-                VSFrameRef *bgr = nullptr;
+                const VSFrame *src = vsapi->getFrameFilter(n, d->node, frameCtx);
+                VSFrame *dst = vsapi->copyFrame(src, core);
+                VSFrame *bgr = nullptr;
 
                 SubPicDesc subpic;
                 subpic.w = d->vi->width;
                 subpic.h = d->vi->height;
 
-                if (d->vi->format->id == pfYUV420P8) {
+                if (isYUV420(d->vi->format, 8)) {
                     subpic.pitch = vsapi->getStride(dst, 0);
                     subpic.pitchUV = vsapi->getStride(dst, 1);
                     subpic.bits = vsapi->getWritePtr(dst, 0);
@@ -1306,7 +1310,7 @@ public:
                     subpic.bpp = 8;
                     subpic.type = MSP_YV12;
                 }
-                else if (d->vi->format->id == pfYUV420P16) {
+                else if (isYUV420(d->vi->format, 16)) {
                     const int uvStride = vsapi->getStride(src, 1) / sizeof(uint16_t);
                     const int bufStride = d->vi->width;
                     const uint16_t *srcpY = reinterpret_cast<const uint16_t *>(vsapi->getReadPtr(src, 0));
@@ -1314,7 +1318,7 @@ public:
                     const uint16_t *srcpV = reinterpret_cast<const uint16_t *>(vsapi->getReadPtr(src, 2));
                     uint16_t *VS_RESTRICT buffer = d->buffer16.get();
 
-                    vs_bitblt(buffer, d->vi->width * sizeof(uint16_t), srcpY, vsapi->getStride(src, 0), d->vi->width * sizeof(uint16_t), d->vi->height);
+                    vsh::bitblt(buffer, d->vi->width * sizeof(uint16_t), srcpY, vsapi->getStride(src, 0), d->vi->width * sizeof(uint16_t), d->vi->height);
                     buffer += bufStride * d->vi->height;
 
                     for (int y = 0; y < vsapi->getFrameHeight(src, 1); y++) {
@@ -1374,7 +1378,7 @@ public:
                 else
                     d->vobsub->Render(subpic, timestamp, d->fps);
 
-                if (d->vi->format->id == pfYUV420P16) {
+                if (isYUV420(d->vi->format, 16)) {
                     const int bufStride = d->vi->width;
                     const int uvStride = vsapi->getStride(dst, 1) / sizeof(uint16_t);
                     const uint16_t *buffer = d->buffer16.get();
@@ -1382,7 +1386,7 @@ public:
                     uint16_t *VS_RESTRICT dstpU = reinterpret_cast<uint16_t *>(vsapi->getWritePtr(dst, 1));
                     uint16_t *VS_RESTRICT dstpV = reinterpret_cast<uint16_t *>(vsapi->getWritePtr(dst, 2));
 
-                    vs_bitblt(dstpY, vsapi->getStride(dst, 0), buffer, d->vi->width * sizeof(uint16_t), d->vi->width * sizeof(uint16_t), d->vi->height);
+                    vsh::bitblt(dstpY, vsapi->getStride(dst, 0), buffer, d->vi->width * sizeof(uint16_t), d->vi->width * sizeof(uint16_t), d->vi->height);
                     buffer += bufStride * d->vi->height;
 
                     for (int y = 0; y < vsapi->getFrameHeight(dst, 1); y++) {
@@ -1396,7 +1400,7 @@ public:
                         dstpV += uvStride;
                     }
                 }
-                else if (d->vi->format->id == pfRGB24) {
+                else if (isRGB24(d->vi->format)) {
                     const int bgrStride = d->vi->width * 4;
                     const int dstStride = vsapi->getStride(dst, 0);
                     const uint8_t *bgrp = d->buffer8.get();
@@ -1439,29 +1443,29 @@ public:
             const std::string filterName{ static_cast<const char *>(userData) };
             int err{};
 
-            d->node = vsapi->propGetNode(in, "clip", 0, nullptr);
+            d->node = vsapi->mapGetNode(in, "clip", 0, nullptr);
             d->vi = vsapi->getVideoInfo(d->node);
 
             try {
-                if (!isConstantFormat(d->vi) ||
-                    (d->vi->format->id != pfYUV420P8 && d->vi->format->id != pfYUV420P16 && d->vi->format->id != pfRGB24))
+                if (!vsh::isConstantVideoFormat(d->vi) ||
+                    (!isYUV420(d->vi->format, 8) && !isYUV420(d->vi->format, 16) && !isRGB24(d->vi->format)))
                     throw std::string{ "only constant format YUV420P8, YUV420P16, and RGB24 input supported" };
 
-                const char *_file = vsapi->propGetData(in, "file", 0, nullptr);
+                const char *_file = vsapi->mapGetData(in, "file", 0, nullptr);
                 const int size = MultiByteToWideChar(CP_UTF8, 0, _file, -1, nullptr, 0);
                 std::unique_ptr<wchar_t[]> file = std::make_unique<wchar_t[]>(size);
                 MultiByteToWideChar(CP_UTF8, 0, _file, -1, file.get(), size);
 
-                int charset = int64ToIntS(vsapi->propGetInt(in, "charset", 0, &err));
+                int charset = vsh::int64ToIntS(vsapi->mapGetInt(in, "charset", 0, &err));
                 if (err)
                     charset = DEFAULT_CHARSET;
 
-                float fps = static_cast<float>(vsapi->propGetFloat(in, "fps", 0, &err));
+                float fps = static_cast<float>(vsapi->mapGetFloat(in, "fps", 0, &err));
                 if (err)
                     fps = -1.0f;
                 d->fps = (fps > 0.0f || !d->vi->fpsNum) ? fps : static_cast<float>(d->vi->fpsNum) / d->vi->fpsDen;
 
-                const char *vfr = vsapi->propGetData(in, "vfr", 0, &err);
+                const char *vfr = vsapi->mapGetData(in, "vfr", 0, &err);
                 if (!err)
                     d->vfr = GetVFRTranslator(vfr);
 
@@ -1478,45 +1482,50 @@ public:
                 if (err)
                     throw std::string{ "can't open " } + _file;
 
-                if (d->vi->format->id == pfYUV420P16)
+                if (isYUV420(d->vi->format, 16))
                     d->buffer16 = std::make_unique<uint16_t[]>(d->vi->width * (d->vi->height + d->vi->height / 2));
-                else if (d->vi->format->id == pfRGB24)
+                else if (isRGB24(d->vi->format))
                     d->buffer8 = std::make_unique<uint8_t[]>(d->vi->width * d->vi->height * 4);
             }
             catch (const std::string &error) {
-                vsapi->setError(out, (filterName + ": " + error).c_str());
+                vsapi->mapSetError(out, (filterName + ": " + error).c_str());
                 vsapi->freeNode(d->node);
                 return;
             }
 
-            vsapi->createFilter(in, out, static_cast<const char *>(userData), vsfilterInit, vsfilterGetFrame, vsfilterFree, fmParallelRequests, 0, d.release(), core);
+            VSFilterDependency deps[] = { { d->node, rpStrictSpatial } };
+            const VSVideoInfo *vi = d->vi;
+            vsapi->createVideoFilter(out, static_cast<const char *>(userData), vi, vsfilterGetFrame, vsfilterFree, fmParallelRequests, deps, 1, d.release(), core);
         }
 
         //////////////////////////////////////////
         // Init
 
-        VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin) {
-            configFunc("com.xy.vsfilter", "xyvsf", "xy-VSFilter", VAPOURSYNTH_API_VERSION, 1, plugin);
+        VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin *plugin, const VSPLUGINAPI *vspapi) {
+            vspapi->configPlugin("com.xy.vsfilter", "xyvsf", "xy-VSFilter", VS_MAKE_VERSION(3, 3), VAPOURSYNTH_API_VERSION, 0, plugin);
 
-            registerFunc("TextSub",
-                "clip:clip;"
+            vspapi->registerFunction("TextSub",
+                "clip:vnode;"
                 "file:data;"
                 "charset:int:opt;"
                 "fps:float:opt;"
                 "vfr:data:opt;",
+                "clip:vnode;",
                 vsfilterCreate, const_cast<char *>("TextSub"), plugin);
 
-            registerFunc("TextSubLibass",
-                "clip:clip;"
+            vspapi->registerFunction("TextSubLibass",
+                "clip:vnode;"
                 "file:data;"
                 "charset:int:opt;"
                 "fps:float:opt;"
                 "vfr:data:opt;",
+                "clip:vnode;",
                 vsfilterCreate, const_cast<char *>("TextSubLibass"), plugin);
 
-            registerFunc("VobSub",
-                "clip:clip;"
+            vspapi->registerFunction("VobSub",
+                "clip:vnode;"
                 "file:data;",
+                "clip:vnode;",
                 vsfilterCreate, const_cast<char *>("VobSub"), plugin);
         }
     }

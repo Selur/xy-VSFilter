@@ -1,0 +1,93 @@
+name: Build wheels
+
+on:
+  push:
+    branches: [vapoursynth-api4]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Windows x64
+    # windows-2022 has the v143 toolset with MFC and vcpkg.
+    runs-on: windows-2022
+    env:
+      VCPKG_ROOT: C:\vcpkg
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install VS2010 Redistributable (for vsyasm)
+        run: choco install vcredist2010 -y
+
+      - name: Install yasm
+        shell: cmd
+        run: |
+          git clone https://github.com/ShiftMediaProject/VSYASM.git
+          .\VSYASM\install_script.bat
+
+      - name: Install vcpkg dependencies
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install `
+            libass:x64-windows-static `
+            boost-flyweight:x64-windows-static `
+            boost-smart-ptr:x64-windows-static `
+            "log4cplus[unicode]:x64-windows-static"
+
+      - uses: microsoft/setup-msbuild@v3
+
+      - name: Build vsfilter
+        run: MSBuild.exe VSFilter.sln /t:vsfilter:Rebuild /p:WindowsTargetPlatformVersion=10.0 /p:PlatformToolset=v143 /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Collect the plugin
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem bin\lib_17.0\x64\Release\*.dll | Where-Object { $_.Name -match 'vsfilter' } | Select-Object -First 1
+          if (-not $dll) { Get-ChildItem bin\lib_17.0\x64\Release; throw "no VSFilter DLL built" }
+          New-Item -ItemType Directory -Force -Path plugin | Out-Null
+          Copy-Item $dll.FullName plugin\xy-VSFilter.dll
+          Get-FileHash plugin\xy-VSFilter.dll -Algorithm SHA256
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Build wheel
+        shell: bash
+        run: |
+          python -m pip install build wheel
+          python -m build --wheel --outdir wheelhouse
+          # The DLL is x64 Windows only, the wheel is tagged accordingly.
+          python -m wheel tags --platform-tag win_amd64 --remove wheelhouse/*.whl
+          ls wheelhouse
+
+      - name: Test the wheel
+        shell: bash
+        run: |
+          python -m pip install VapourSynth wheelhouse/*.whl
+          python test/test_xyvsfilter.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-windows
+          path: wheelhouse/*.whl
+
+  release:
+    name: GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*.whl
+          generate_release_notes: true

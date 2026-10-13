@@ -14,3 +14,9 @@ ipch
 /src/filters/transform/vsfilter/version_in.h
 /.vs
 /msvc
+
+# Wheels
+/plugin/
+dist/
+wheelhouse/
+__pycache__/

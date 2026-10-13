@@ -1,0 +1,19 @@
+[build-system]
+requires = ['hatchling>=1.24']
+build-backend = 'hatchling.build'
+
+[project]
+name = 'vapoursynth-xyvsfilter'
+version = '3.3.0'
+description = 'xy-VSFilter subtitle renderer for VapourSynth (API 4), Windows x64'
+readme = 'README.md'
+requires-python = '>=3.8'
+license = { file = 'License.txt' }
+dependencies = ['VapourSynth']
+
+# MSBuild builds the DLL first and the workflow copies it to plugin/xy-VSFilter.dll; the wheel only carries it.
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.hatch.build.targets.wheel.force-include]
+'plugin/xy-VSFilter.dll' = 'vapoursynth/plugins/xy-VSFilter.dll'

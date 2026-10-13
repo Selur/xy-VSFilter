@@ -12,6 +12,25 @@ This is a subtitle render filter for directshow video players such as mpc-hc/mpc
     - Options -> Subtitle -> Subtitle renderer in MPC-BE 
     - Options -> Playback -> Output -> Subtitle Renderer in MPC-HC
 
+## VapourSynth (API 4)
+`VSFilter.dll` doubles as a VapourSynth plugin, namespace `xyvsf`:
+
+```
+xyvsf.TextSub(clip clip, string file[, int charset, float fps, string vfr])
+xyvsf.TextSubLibass(clip clip, string file[, int charset, float fps, string vfr])
+xyvsf.VobSub(clip clip, string file)
+```
+
+Supported formats: YUV420P8, YUV420P16, RGB24. The interface targets the VapourSynth API 4 (R55 and newer, required
+since R80). The branch `vapoursynth-api4` builds a wheel for Windows x64 and attaches it to the GitHub releases:
+
+```
+pip install vapoursynth_xyvsfilter-<version>-py3-none-win_amd64.whl
+```
+
+It puts the plugin as `xy-VSFilter.dll` into `site-packages/vapoursynth/plugins`, where VapourSynth autoloads it.
+`test/test_xyvsfilter.py` checks the formats, both renderers, VobSub and the errors.
+
 ## How to compile
 1. Clone or download release from https://github.com/ShiftMediaProject/VSYASM and run install_script.bat as administrator.
 2. Install dependencies with vcpkg:
