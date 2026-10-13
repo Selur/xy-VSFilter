@@ -88,8 +88,9 @@ def main():
                 out = getattr(core.xyvsf, func)(src, file=path)
                 name = "%s %s" % (func, core.get_video_format(fmt).name)
                 check(out.format.id == src.format.id and out.num_frames == 80, "%s: format and length kept" % name)
-                check(digest(out, 10) != digest(src, 10) and digest(out, 35) == digest(src, 35) and digest(out, 60) != digest(src, 60),
-                      "%s: text only while a dialogue line is active" % name)
+                check(digest(out, 10) != digest(src, 10), "%s: first line rendered" % name)
+                check(digest(out, 35) == digest(src, 35), "%s: frame without a dialogue line unchanged" % name)
+                check(digest(out, 60) != digest(src, 60), "%s: second line rendered" % name)
 
         src = core.std.BlankClip(width=720, height=480, format=vs.YUV420P8, length=50, fpsnum=25, fpsden=1)
         out = core.xyvsf.VobSub(src, file=os.path.join(HERE, "31.idx"))
