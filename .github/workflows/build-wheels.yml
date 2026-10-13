@@ -67,7 +67,12 @@ jobs:
         shell: bash
         run: |
           python -m pip install VapourSynth wheelhouse/*.whl
-          python test/test_xyvsfilter.py
+          # A failing check also becomes an annotation, readable without the log.
+          set +e
+          python test/test_xyvsfilter.py 2>&1 | tee test.log
+          status=${PIPESTATUS[0]}
+          grep -E "FAIL|Error|Traceback|line [0-9]+" test.log | sed 's/^/::error::/'
+          exit $status
 
       - uses: actions/upload-artifact@v7
         with:
